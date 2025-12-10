@@ -1,0 +1,352 @@
+// Polymarket Trading Agent Database Schema
+// Database: PostgreSQL (Supabase)
+// Purpose: Store market data, trades, and user analytics for AI trading agent
+
+Project PolymarketTradingAgent {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Database for Polymarket AI Trading Agent
+    Tracks markets, trades, users, and trading patterns
+    Optimized for analytics and pattern recognition
+  '''
+}
+
+// ============================================
+// MARKETS TABLE
+// Core market information and metadata
+// ============================================
+Table markets {
+  id varchar(255) [primary key, note: 'Market unique identifier']
+  condition_id varchar(66) [not null, unique, note: 'Blockchain condition ID (0x prefixed)']
+  question text [not null, note: 'Market question']
+  slug varchar(255) [unique, not null, note: 'URL-friendly market identifier']
+  description text [note: 'Detailed market description']
+  
+  // Outcome information
+  outcomes json [note: 'Array of possible outcomes']
+  outcome_prices json [note: 'Current prices for each outcome']
+  clob_token_ids json [note: 'Token IDs for CLOB trading']
+  
+  // Status and lifecycle
+  active boolean [default: true, note: 'Market is currently active']
+  closed boolean [default: false, note: 'Market is closed for trading']
+  archived boolean [default: false, note: 'Market is archived']
+  funded boolean [default: false, note: 'Market is funded']
+  ready boolean [default: false, note: 'Market is ready for trading']
+  restricted boolean [default: false, note: 'Market has restrictions']
+  
+  // Dates
+  start_date_iso timestamp [note: 'Market start date']
+  end_date_iso timestamp [note: 'Market end date']
+  created_at timestamp [not null, default: `now()`, note: 'Record creation time']
+  updated_at timestamp [not null, default: `now()`, note: 'Record last update time']
+  accepting_orders_timestamp timestamp [note: 'When market started accepting orders']
+  
+  // Trading configuration
+  enable_order_book boolean [default: true]
+  order_price_min_tick_size decimal(18, 8) [note: 'Minimum price tick size']
+  order_min_size decimal(18, 8) [note: 'Minimum order size']
+  accepting_orders boolean [default: true]
+  neg_risk boolean [default: false, note: 'Negative risk market']
+  
+  // Volume and liquidity metrics (stored as numeric for calculations)
+  volume_num decimal(18, 2) [note: 'Total volume']
+  liquidity_num decimal(18, 2) [note: 'Current liquidity']
+  volume_24hr decimal(18, 2) [note: '24 hour volume']
+  volume_1wk decimal(18, 2) [note: '1 week volume']
+  volume_1mo decimal(18, 2) [note: '1 month volume']
+  volume_1yr decimal(18, 2) [note: '1 year volume']
+  
+  // CLOB-specific volumes
+  volume_clob decimal(18, 2)
+  volume_24hr_clob decimal(18, 2)
+  volume_1wk_clob decimal(18, 2)
+  volume_1mo_clob decimal(18, 2)
+  volume_1yr_clob decimal(18, 2)
+  liquidity_clob decimal(18, 2)
+  
+  // Price tracking
+  spread decimal(18, 8) [note: 'Current bid-ask spread']
+  one_day_price_change decimal(18, 8) [note: 'Price change over 1 day']
+  one_week_price_change decimal(18, 8) [note: 'Price change over 1 week']
+  one_month_price_change decimal(18, 8) [note: 'Price change over 1 month']
+  last_trade_price decimal(18, 8) [note: 'Most recent trade price']
+  best_bid decimal(18, 8) [note: 'Current best bid price']
+  best_ask decimal(18, 8) [note: 'Current best ask price']
+  
+  // Resolution information
+  resolution_source text [note: 'Source for market resolution']
+  resolved_by varchar(42) [note: 'Address of resolver']
+  uma_bond decimal(18, 2) [note: 'UMA bond amount']
+  uma_reward decimal(18, 2) [note: 'UMA reward amount']
+  uma_resolution_statuses json [note: 'UMA resolution status data']
+  
+  // Media and presentation
+  image text [note: 'Market image URL']
+  icon text [note: 'Market icon URL']
+  
+  // Categorization
+  events json [note: 'Associated events']
+  group_item_title varchar(255) [note: 'Group title if part of series']
+  group_item_threshold decimal(18, 8) [note: 'Group threshold value']
+  series_color varchar(50) [note: 'Color for series visualization']
+  
+  // Feature flags
+  new boolean [default: false]
+  featured boolean [default: false]
+  competitive boolean [default: false]
+  cyom boolean [default: false, note: 'Create Your Own Market']
+  rfq_enabled boolean [default: false, note: 'Request for Quote enabled']
+  holding_rewards_enabled boolean [default: false]
+  fees_enabled boolean [default: false]
+  show_gmp_series boolean [default: false]
+  show_gmp_outcome boolean [default: false]
+  
+  // Administrative
+  submitted_by varchar(255) [note: 'Market submitter']
+  approved boolean [default: false]
+  pager_duty_notification_enabled boolean [default: false]
+  pending_deployment boolean [default: false]
+  deploying boolean [default: false]
+  
+  // Trading parameters
+  market_maker_address varchar(42) [note: 'Market maker contract address']
+  rewards_min_size decimal(18, 8) [note: 'Minimum size for rewards']
+  rewards_max_spread decimal(18, 8) [note: 'Maximum spread for rewards']
+  
+  indexes {
+    condition_id [unique, name: 'idx_markets_condition_id']
+    slug [unique, name: 'idx_markets_slug']
+    (active, closed) [name: 'idx_markets_status']
+    end_date_iso [name: 'idx_markets_end_date']
+    created_at [name: 'idx_markets_created_at']
+    volume_num [name: 'idx_markets_volume']
+  }
+  
+  Note: 'Core markets table storing all market metadata and real-time pricing'
+}
+
+// ============================================
+// USERS TABLE
+// User profiles and performance metrics
+// ============================================
+Table users {
+  proxy_wallet varchar(42) [primary key, note: 'User proxy wallet address (0x prefixed)']
+  name varchar(255) [note: 'User display name']
+  pseudonym varchar(255) [note: 'User pseudonym/handle']
+  bio text [note: 'User biography']
+  
+  // Trading statistics (calculated/aggregated)
+  total_trades integer [default: 0, note: 'Total number of trades']
+  total_volume decimal(18, 2) [default: 0, note: 'Total trading volume in USD']
+  total_pnl decimal(18, 2) [default: 0, note: 'Total profit/loss in USD']
+  win_rate decimal(5, 2) [note: 'Win rate percentage (0-100)']
+  avg_trade_size decimal(18, 2) [note: 'Average trade size']
+  avg_holding_period interval [note: 'Average time holding positions']
+  
+  // Performance metrics
+  sharpe_ratio decimal(10, 4) [note: 'Risk-adjusted return metric']
+  roi_percentage decimal(10, 2) [note: 'Overall return on investment']
+  max_drawdown decimal(10, 2) [note: 'Maximum drawdown percentage']
+  consecutive_wins integer [default: 0, note: 'Current winning streak']
+  consecutive_losses integer [default: 0, note: 'Current losing streak']
+  best_trade_pnl decimal(18, 2) [note: 'Best single trade profit']
+  worst_trade_pnl decimal(18, 2) [note: 'Worst single trade loss']
+  
+  // Trading behavior patterns
+  preferred_markets json [note: 'Array of frequently traded market categories']
+  avg_position_size decimal(5, 2) [note: 'Average position size as % of portfolio']
+  risk_score decimal(5, 2) [note: 'Calculated risk score (0-100)']
+  trading_frequency varchar(20) [note: 'high/medium/low based on trade frequency']
+  
+  // Time-based performance
+  pnl_7d decimal(18, 2) [note: 'P&L last 7 days']
+  pnl_30d decimal(18, 2) [note: 'P&L last 30 days']
+  pnl_90d decimal(18, 2) [note: 'P&L last 90 days']
+  volume_7d decimal(18, 2) [note: 'Volume last 7 days']
+  volume_30d decimal(18, 2) [note: 'Volume last 30 days']
+  
+  // User status
+  is_profitable boolean [note: 'User has positive total P&L']
+  is_active boolean [default: true, note: 'User actively trading']
+  is_whale boolean [default: false, note: 'User trades large volumes']
+  is_successful_trader boolean [default: false, note: 'Meets success criteria for AI training']
+  last_trade_at timestamp [note: 'Most recent trade timestamp']
+  
+  // Administrative
+  first_seen_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  
+  indexes {
+    total_pnl [name: 'idx_users_pnl']
+    win_rate [name: 'idx_users_win_rate']
+    roi_percentage [name: 'idx_users_roi']
+    is_successful_trader [name: 'idx_users_successful']
+    last_trade_at [name: 'idx_users_last_trade']
+  }
+  
+  Note: 'User profiles with calculated trading performance metrics for AI training'
+}
+
+// ============================================
+// TRADES TABLE
+// Individual trade records
+// ============================================
+Table trades {
+  id bigserial [primary key, note: 'Auto-incrementing trade ID']
+  transaction_hash varchar(66) [unique, note: 'Blockchain transaction hash']
+  proxy_wallet varchar(42) [not null, ref: > users.proxy_wallet, note: 'Trader wallet address']
+  condition_id varchar(66) [not null, note: 'Market condition ID']
+  slug varchar(255) [ref: > markets.slug, note: 'Market slug identifier']
+  
+  // Trade details
+  side varchar(4) [not null, note: 'BUY or SELL']
+  asset varchar(66) [note: 'Asset/token traded']
+  outcome varchar(255) [note: 'Outcome traded (e.g., Yes/No)']
+  outcome_index integer [note: 'Index of outcome in market outcomes array']
+  size decimal(18, 8) [not null, note: 'Trade size/quantity']
+  price decimal(18, 8) [not null, note: 'Trade execution price (0-1)']
+  
+  // Metadata
+  timestamp bigint [not null, note: 'Unix timestamp of trade']
+  datetime timestamp [not null, note: 'Converted datetime of trade']
+  title text [note: 'Market title at time of trade']
+  icon text [note: 'Market icon URL']
+  event_slug varchar(255) [note: 'Associated event slug']
+  
+  // Calculated fields
+  trade_value_usd decimal(18, 2) [note: 'size * price in USD']
+  
+  indexes {
+    proxy_wallet [name: 'idx_trades_wallet']
+    condition_id [name: 'idx_trades_condition']
+    slug [name: 'idx_trades_slug']
+    datetime [name: 'idx_trades_datetime']
+    (proxy_wallet, datetime) [name: 'idx_trades_wallet_time']
+    transaction_hash [unique, name: 'idx_trades_tx_hash']
+    (side, datetime) [name: 'idx_trades_side_time']
+  }
+  
+  Note: 'Individual trade records linked to users and markets'
+}
+
+// ============================================
+// USER POSITIONS TABLE (Derived/Aggregated)
+// Current and historical positions
+// ============================================
+Table user_positions {
+  id bigserial [primary key]
+  proxy_wallet varchar(42) [not null, ref: > users.proxy_wallet]
+  condition_id varchar(66) [not null]
+  slug varchar(255) [ref: > markets.slug]
+  
+  // Position details
+  outcome varchar(255) [not null]
+  outcome_index integer [not null]
+  asset varchar(66)
+  
+  // Position metrics
+  current_size decimal(18, 8) [not null, note: 'Current position size']
+  avg_entry_price decimal(18, 8) [not null, note: 'Average entry price']
+  total_invested decimal(18, 2) [note: 'Total amount invested']
+  current_value decimal(18, 2) [note: 'Current position value']
+  unrealized_pnl decimal(18, 2) [note: 'Unrealized profit/loss']
+  realized_pnl decimal(18, 2) [default: 0, note: 'Realized profit/loss']
+  
+  // Position lifecycle
+  opened_at timestamp [not null, note: 'When position was opened']
+  last_updated_at timestamp [not null, default: `now()`]
+  closed_at timestamp [note: 'When position was fully closed']
+  is_open boolean [default: true, note: 'Position is currently open']
+  
+  indexes {
+    (proxy_wallet, is_open) [name: 'idx_positions_wallet_open']
+    condition_id [name: 'idx_positions_condition']
+    (proxy_wallet, condition_id) [unique, name: 'idx_positions_wallet_market']
+    closed_at [name: 'idx_positions_closed_at']
+  }
+  
+  Note: 'Current and historical user positions aggregated from trades'
+}
+
+// ============================================
+// MARKET SNAPSHOTS TABLE
+// Time-series data for market prices and volumes
+// ============================================
+Table market_snapshots {
+  id bigserial [primary key]
+  condition_id varchar(66) [not null, ref: > markets.condition_id]
+  slug varchar(255) [ref: > markets.slug]
+  
+  // Snapshot time
+  snapshot_at timestamp [not null, default: `now()`]
+  
+  // Price data
+  outcome_prices json [not null, note: 'Prices for all outcomes']
+  best_bid decimal(18, 8)
+  best_ask decimal(18, 8)
+  spread decimal(18, 8)
+  last_trade_price decimal(18, 8)
+  
+  // Volume data
+  volume_total decimal(18, 2)
+  volume_24hr decimal(18, 2)
+  liquidity decimal(18, 2)
+  
+  // Market metrics
+  num_trades_24hr integer [note: 'Number of trades in last 24h']
+  unique_traders_24hr integer [note: 'Unique traders in last 24h']
+  
+  indexes {
+    (condition_id, snapshot_at) [name: 'idx_snapshots_market_time']
+    snapshot_at [name: 'idx_snapshots_time']
+    slug [name: 'idx_snapshots_slug']
+  }
+  
+  Note: 'Time-series snapshots of market data for trend analysis'
+}
+
+// ============================================
+// TRADING PATTERNS TABLE
+// Identified patterns for AI training
+// ============================================
+Table trading_patterns {
+  id bigserial [primary key]
+  proxy_wallet varchar(42) [ref: > users.proxy_wallet]
+  pattern_type varchar(50) [not null, note: 'e.g., early_entry, contrarian, momentum']
+  pattern_name varchar(255) [not null]
+  
+  // Pattern characteristics
+  description text
+  success_rate decimal(5, 2) [note: 'Success rate of this pattern']
+  avg_return decimal(10, 2) [note: 'Average return when pattern occurs']
+  frequency integer [default: 1, note: 'How many times pattern observed']
+  
+  // Pattern context
+  market_conditions json [note: 'Market conditions when pattern occurs']
+  time_of_day varchar(20) [note: 'Time pattern typically occurs']
+  
+  // Metadata
+  first_observed_at timestamp [not null]
+  last_observed_at timestamp [not null]
+  
+  indexes {
+    proxy_wallet [name: 'idx_patterns_wallet']
+    pattern_type [name: 'idx_patterns_type']
+    success_rate [name: 'idx_patterns_success']
+  }
+  
+  Note: 'Identified trading patterns for AI learning and replication'
+}
+
+// ============================================
+// RELATIONSHIPS
+// ============================================
+Ref: trades.proxy_wallet > users.proxy_wallet
+Ref: trades.slug > markets.slug
+Ref: user_positions.proxy_wallet > users.proxy_wallet
+Ref: user_positions.slug > markets.slug
+Ref: market_snapshots.condition_id > markets.condition_id
+Ref: market_snapshots.slug > markets.slug
+Ref: trading_patterns.proxy_wallet > users.proxy_wallet
+

@@ -1,0 +1,269 @@
+# Polymarket Trading Agent - .gitignore
+
+# ============================================
+# Python
+# ============================================
+*.py[cod]
+*$py.class
+*.so
+.Python
+__pycache__/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================
+# Virtual Environments
+# ============================================
+pm-venv/
+venv/
+ENV/
+env/
+.venv
+.virtualenv
+
+# ============================================
+# Jupyter Notebook
+# ============================================
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+*.ipynb_checkpoints/
+
+# ============================================
+# Environment Variables & Secrets
+# ============================================
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets.json
+credentials.json
+
+# Supabase credentials
+supabase_config.json
+.supabase/
+
+# API keys and tokens
+**/config/secrets.py
+**/config/local_settings.py
+
+# ============================================
+# Database Files
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sql.gz
+database_backup/
+db_dumps/
+*.dump
+
+# PostgreSQL dumps
+*.pgdump
+*.psql
+
+# ============================================
+# Data Files (generated or downloaded)
+# ============================================
+# Uncomment these if you don't want to track data files
+# data/
+# *.csv
+# *.json
+# *.parquet
+# *.feather
+
+# Large data files
+trading_patterns_analysis.json
+market_data_*.json
+trades_export_*.csv
+
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+*.log.*
+log/
+
+# ============================================
+# IDEs & Editors
+# ============================================
+
+# VSCode / Cursor
+.vscode/
+.cursor/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Operating System
+# ============================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# ============================================
+# Testing
+# ============================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.cache
+
+# ============================================
+# Distribution / Packaging
+# ============================================
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ============================================
+# Documentation
+# ============================================
+docs/_build/
+site/
+.mkdocs_cache/
+
+# ============================================
+# Temporary Files
+# ============================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+tmp/
+temp/
+
+# ============================================
+# Machine Learning / AI Models
+# ============================================
+# Uncomment if you're saving large model files
+# models/
+# *.h5
+# *.pkl
+# *.joblib
+# *.pt
+# *.pth
+# *.ckpt
+# checkpoints/
+# wandb/
+# mlruns/
+
+# ============================================
+# Project Specific
+# ============================================
+
+# Analysis outputs
+analysis_results/
+pattern_analysis_*.json
+backtest_results/
+
+# Cached API responses
+.cache_api/
+api_cache/
+
+# Local development files
+local_test.py
+scratch.py
+test_*.ipynb
+debug.ipynb
+
+# Configuration overrides
+config_local.py
+settings_local.py
+
+# Performance profiling
+*.prof
+profile_stats/
+
+# ============================================
+# Node modules (if using any JS tools)
+# ============================================
+node_modules/
+package-lock.json
+yarn.lock
+
+# ============================================
+# Miscellaneous
+# ============================================
+*.bak
+*.orig
+*.rej
+*~.nib
+.sass-cache/
+.Spotlight-V100
+.Trashes
+Icon\r
+

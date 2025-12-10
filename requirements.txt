@@ -1,0 +1,31 @@
+# Polymarket Trading Agent Requirements
+
+# Core dependencies
+requests>=2.31.0
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Supabase client
+supabase>=2.0.0
+
+# Optional: For notebook development
+jupyter>=1.0.0
+ipython>=8.12.0
+
+# Optional: For API client
+polymarket-apis>=0.1.0
+
+# Optional: For ML/AI (add when building trading agent)
+# scikit-learn>=1.3.0
+# tensorflow>=2.13.0
+# torch>=2.0.0
+
+# Optional: For data visualization
+# matplotlib>=3.7.0
+# seaborn>=0.12.0
+# plotly>=5.14.0
+
+# Optional: For async operations
+# asyncio>=3.4.3
+# aiohttp>=3.8.0
+
