@@ -12,11 +12,92 @@ Project PolymarketTradingAgent {
 }
 
 // ============================================
+// EVENTS TABLE
+// Event-level data (can contain multiple markets)
+// ============================================
+Table events {
+  id varchar(255) [primary key, note: 'Event unique identifier']
+  ticker varchar(255) [note: 'Event ticker symbol']
+  slug varchar(255) [unique, not null, note: 'URL-friendly event identifier']
+  title text [not null, note: 'Event title/question']
+  description text [note: 'Detailed event description']
+  
+  // Event type
+  event_type varchar(10) [note: 'SMP (single market) or GMP (group market)']
+  market_count integer [default: 0, note: 'Number of markets in this event']
+  
+  // Status and lifecycle
+  active boolean [default: true]
+  closed boolean [default: false]
+  archived boolean [default: false]
+  new boolean [default: false]
+  featured boolean [default: false]
+  restricted boolean [default: false]
+  
+  // Dates
+  start_date timestamp [note: 'Event start date']
+  creation_date timestamp [note: 'Event creation date']
+  end_date timestamp [note: 'Event end date']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  
+  // Volume and liquidity (aggregated across all markets)
+  liquidity decimal(18, 2) [note: 'Total liquidity across markets']
+  volume decimal(18, 2) [note: 'Total volume across markets']
+  volume_24hr decimal(18, 2)
+  volume_1wk decimal(18, 2)
+  volume_1mo decimal(18, 2)
+  volume_1yr decimal(18, 2)
+  open_interest decimal(18, 2)
+  
+  // CLOB metrics
+  liquidity_clob decimal(18, 2)
+  
+  // Media
+  image text
+  icon text
+  
+  // Configuration
+  enable_order_book boolean [default: true]
+  competitive decimal(5, 4) [note: 'Competitiveness score']
+  comment_count integer [default: 0]
+  cyom boolean [default: false, note: 'Create Your Own Market']
+  
+  // Display options
+  show_all_outcomes boolean [default: true]
+  show_market_images boolean [default: true]
+  enable_neg_risk boolean [default: false]
+  automatically_active boolean [default: true]
+  neg_risk_augmented boolean [default: false]
+  pending_deployment boolean [default: false]
+  deploying boolean [default: false]
+  
+  // Tags/Categories
+  tags jsonb [note: 'Array of tag objects']
+  
+  // Resolution
+  resolution_source text
+  
+  indexes {
+    slug [unique, name: 'idx_events_slug']
+    ticker [name: 'idx_events_ticker']
+    (active, closed) [name: 'idx_events_status']
+    end_date [name: 'idx_events_end_date']
+    created_at [name: 'idx_events_created_at']
+    volume [name: 'idx_events_volume']
+    event_type [name: 'idx_events_type']
+  }
+  
+  Note: 'Events table - each event can contain one (SMP) or multiple (GMP) markets'
+}
+
+// ============================================
 // MARKETS TABLE
 // Core market information and metadata
 // ============================================
 Table markets {
   id varchar(255) [primary key, note: 'Market unique identifier']
+  event_id varchar(255) [not null, ref: > events.id, note: 'Parent event ID']
   condition_id varchar(66) [not null, unique, note: 'Blockchain condition ID (0x prefixed)']
   question text [not null, note: 'Market question']
   slug varchar(255) [unique, not null, note: 'URL-friendly market identifier']
@@ -85,8 +166,7 @@ Table markets {
   image text [note: 'Market image URL']
   icon text [note: 'Market icon URL']
   
-  // Categorization
-  events json [note: 'Associated events']
+  // Categorization (for GMP markets)
   group_item_title varchar(255) [note: 'Group title if part of series']
   group_item_threshold decimal(18, 8) [note: 'Group threshold value']
   series_color varchar(50) [note: 'Color for series visualization']
@@ -115,6 +195,7 @@ Table markets {
   rewards_max_spread decimal(18, 8) [note: 'Maximum spread for rewards']
   
   indexes {
+    event_id [name: 'idx_markets_event_id']
     condition_id [unique, name: 'idx_markets_condition_id']
     slug [unique, name: 'idx_markets_slug']
     (active, closed) [name: 'idx_markets_status']
@@ -342,6 +423,7 @@ Table trading_patterns {
 // ============================================
 // RELATIONSHIPS
 // ============================================
+Ref: markets.event_id > events.id
 Ref: trades.proxy_wallet > users.proxy_wallet
 Ref: trades.slug > markets.slug
 Ref: user_positions.proxy_wallet > users.proxy_wallet

@@ -3,6 +3,8 @@ Load Polymarket data into Supabase database
 """
 
 import os
+import sys
+from pathlib import Path
 import requests
 import pandas as pd
 from datetime import datetime
@@ -10,11 +12,21 @@ from supabase import create_client, Client
 from typing import List, Dict, Any, Optional
 import time
 
+# Load environment variables from .env file in project root
+from dotenv import load_dotenv
+
+# Get the project root directory (parent of database/)
+project_root = Path(__file__).parent.parent
+dotenv_path = project_root / '.env'
+
+# Load .env file
+load_dotenv(dotenv_path)
+
 # ============================================
 # Configuration
 # ============================================
 
-# Get from Supabase project settings
+# Get from Supabase project settings or .env file
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "your-project-url.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "your-anon-key")
 
@@ -25,13 +37,42 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # API Functions (from your notebook)
 # ============================================
 
+def get_events(active: Optional[bool] = None, closed: Optional[bool] = None, 
+               limit: int = 100, offset: int = 0) -> List[Dict]:
+    """
+    Fetch events from Gamma API
+    Events contain nested markets (1 for SMP, multiple for GMP)
+    """
+    url = "https://gamma-api.polymarket.com/events"
+    params = {
+        "limit": limit,
+        "offset": offset,
+        "ascending": False
+    }
+    
+    if active is not None:
+        params["active"] = str(active).lower()
+    if closed is not None:
+        params["closed"] = str(closed).lower()
+    
+    response = requests.get(url, params=params)
+    return response.json()
+
+
 def get_markets(active: Optional[bool] = None, closed: Optional[bool] = None, 
                 limit: int = 100, offset: int = 0) -> List[Dict]:
-    """Fetch markets from Gamma API"""
+    """
+    DEPRECATED: Fetch markets from Gamma API
+    
+    ⚠️  WARNING: This function is deprecated. Use get_events() instead.
+    Markets should be loaded from events to maintain proper event-market relationships.
+    Direct market API doesn't provide event_id, so we can't link them properly.
+    """
     url = "https://gamma-api.polymarket.com/markets"
     params = {
         "limit": limit,
-        "offset": offset
+        "offset": offset,
+        "ascending": False
     }
     
     if active is not None:
@@ -56,7 +97,7 @@ def get_trades(user: Optional[str] = None, market: Optional[str] = None,
     if user:
         params["user"] = user
     if market:
-        params["market"] = market
+        params["market"] = market # market condition id
     if event_id:
         params["eventId"] = event_id
     if side:
@@ -70,10 +111,62 @@ def get_trades(user: Optional[str] = None, market: Optional[str] = None,
 # Data Transformation Functions
 # ============================================
 
-def transform_market_data(market: Dict) -> Dict:
+def transform_event_data(event: Dict) -> Dict:
+    """Transform event data from API to database schema"""
+    # Determine event type based on market count
+    markets = event.get('markets', [])
+    event_type = 'SMP' if len(markets) == 1 else 'GMP' if len(markets) > 1 else None
+    
+    return {
+        'id': event.get('id'),
+        'ticker': event.get('ticker'),
+        'slug': event.get('slug'),
+        'title': event.get('title'),
+        'description': event.get('description'),
+        'event_type': event_type,
+        'market_count': len(markets),
+        'active': event.get('active', True),
+        'closed': event.get('closed', False),
+        'archived': event.get('archived', False),
+        'new': event.get('new', False),
+        'featured': event.get('featured', False),
+        'restricted': event.get('restricted', False),
+        'start_date': event.get('startDate'),
+        'creation_date': event.get('creationDate'),
+        'end_date': event.get('endDate'),
+        'created_at': event.get('createdAt'),
+        'updated_at': event.get('updatedAt'),
+        'liquidity': event.get('liquidity'),
+        'volume': event.get('volume'),
+        'volume_24hr': event.get('volume24hr'),
+        'volume_1wk': event.get('volume1wk'),
+        'volume_1mo': event.get('volume1mo'),
+        'volume_1yr': event.get('volume1yr'),
+        'open_interest': event.get('openInterest'),
+        'liquidity_clob': event.get('liquidityClob'),
+        'image': event.get('image'),
+        'icon': event.get('icon'),
+        'enable_order_book': event.get('enableOrderBook', True),
+        'competitive': event.get('competitive'),
+        'comment_count': event.get('commentCount', 0),
+        'cyom': event.get('cyom', False),
+        'show_all_outcomes': event.get('showAllOutcomes', True),
+        'show_market_images': event.get('showMarketImages', True),
+        'enable_neg_risk': event.get('enableNegRisk', False),
+        'automatically_active': event.get('automaticallyActive', True),
+        'neg_risk_augmented': event.get('negRiskAugmented', False),
+        'pending_deployment': event.get('pendingDeployment', False),
+        'deploying': event.get('deploying', False),
+        'tags': event.get('tags'),
+        'resolution_source': event.get('resolutionSource'),
+    }
+
+
+def transform_market_data(market: Dict, event_id: str = None) -> Dict:
     """Transform market data from API to database schema"""
     return {
         'id': market.get('id'),
+        'event_id': event_id,  # Link to parent event
         'condition_id': market.get('conditionId') or market.get('condition_id'),
         'question': market.get('question'),
         'slug': market.get('slug'),
@@ -187,12 +280,37 @@ def transform_user_data(trade: Dict) -> Dict:
 # Database Loading Functions
 # ============================================
 
-def upsert_markets(markets: List[Dict]) -> int:
-    """Insert or update markets in database"""
+def upsert_events(events: List[Dict]) -> int:
+    """Insert or update events in database"""
+    count = 0
+    for event in events:
+        try:
+            transformed = transform_event_data(event)
+            # Remove None values to avoid overwriting with nulls
+            transformed = {k: v for k, v in transformed.items() if v is not None}
+            
+            result = supabase.table('events').upsert(
+                transformed,
+                on_conflict='slug'
+            ).execute()
+            count += 1
+        except Exception as e:
+            print(f"Error upserting event {event.get('slug')}: {e}")
+    
+    return count
+
+
+def upsert_markets(markets: List[Dict], event_id: str = None) -> int:
+    """
+    DEPRECATED: Insert or update markets in database
+    
+    ⚠️  WARNING: This function is deprecated.
+    Markets should be loaded via load_events_with_markets() to maintain event-market relationships.
+    """
     count = 0
     for market in markets:
         try:
-            transformed = transform_market_data(market)
+            transformed = transform_market_data(market, event_id=event_id)
             # Remove None values to avoid overwriting with nulls
             transformed = {k: v for k, v in transformed.items() if v is not None}
             
@@ -288,18 +406,77 @@ def take_market_snapshot(market: Dict) -> bool:
 # Main ETL Functions
 # ============================================
 
-def load_markets(limit: int = 1000, active_only: bool = False):
-    """Load markets from API to database"""
-    print(f"Fetching markets (limit={limit}, active_only={active_only})...")
+def load_events_with_markets(limit: int = 1000, active_only: bool = False):
+    """
+    Load events from API with their nested markets.
+    This is the ONLY way to load data - it preserves event-market relationships.
     
-    markets = get_markets(active=active_only if active_only else None, limit=limit)
-    print(f"Fetched {len(markets)} markets")
+    Process:
+    1. Fetch events from Gamma API (events contain nested markets)
+    2. Store events in events table
+    3. Extract nested markets from each event
+    4. Add parent event_id to each market
+    5. Store markets in markets table with event_id link
+    """
+    print(f"Fetching events from API (limit={limit}, active_only={active_only})...")
     
-    print("Upserting markets to database...")
-    count = upsert_markets(markets)
-    print(f"Upserted {count} markets")
+    events = get_events(active=active_only if active_only else None, limit=limit)
+    print(f"✓ Fetched {len(events)} events")
     
-    return count
+    # Step 1: Upsert events to database
+    print("\nStep 1: Storing events...")
+    event_count = upsert_events(events)
+    print(f"✓ Upserted {event_count} events")
+    
+    # Step 2: Extract and process markets from nested data
+    print("\nStep 2: Processing nested markets...")
+    market_count = 0
+    
+    for event in events:
+        event_id = event.get('id')
+        markets = event.get('markets', [])
+        
+        if not markets:
+            print(f"  ⚠️  Event {event.get('slug')} has no markets")
+            continue
+        
+        # Process each nested market
+        for market in markets:
+            try:
+                # Transform market data and inject event_id
+                transformed = transform_market_data(market, event_id=event_id)
+                
+                # Remove None values
+                transformed = {k: v for k, v in transformed.items() if v is not None}
+                
+                # Ensure event_id is present (required foreign key)
+                if not transformed.get('event_id'):
+                    print(f"  ⚠️  Market {market.get('slug')} missing event_id, skipping...")
+                    continue
+                
+                # Upsert to database
+                result = supabase.table('markets').upsert(
+                    transformed,
+                    on_conflict='slug'
+                ).execute()
+                
+                market_count += 1
+                
+            except Exception as e:
+                print(f"  ✗ Error upserting market {market.get('slug')}: {e}")
+    
+    print(f"✓ Upserted {market_count} markets")
+    
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"Summary:")
+    print(f"  Events: {event_count}")
+    print(f"  Markets: {market_count}")
+    print(f"  Avg markets per event: {market_count/event_count:.2f}" if event_count > 0 else "  Avg: N/A")
+    print(f"{'='*60}")
+    
+    return event_count, market_count
+
 
 
 def load_trades(limit: int = 10000, market_slug: Optional[str] = None):
@@ -350,16 +527,23 @@ def load_trades(limit: int = 10000, market_slug: Optional[str] = None):
 
 
 def take_snapshots_for_active_markets():
-    """Take snapshots of all active markets"""
-    print("Fetching active markets...")
-    markets = get_markets(active=True, limit=1000)
-    print(f"Found {len(markets)} active markets")
+    """Take snapshots of all active markets from active events"""
+    print("Fetching active events with markets...")
+    events = get_events(active=True, limit=1000)
+    print(f"Found {len(events)} active events")
     
     count = 0
-    for market in markets:
-        if take_market_snapshot(market):
-            count += 1
+    total_markets = 0
     
+    for event in events:
+        markets = event.get('markets', [])
+        total_markets += len(markets)
+        
+        for market in markets:
+            if take_market_snapshot(market):
+                count += 1
+    
+    print(f"Processed {total_markets} markets from {len(events)} events")
     print(f"Took {count} market snapshots")
     return count
 
@@ -388,23 +572,36 @@ if __name__ == "__main__":
     # Check configuration
     if SUPABASE_URL == "your-project-url.supabase.co":
         print("\n⚠️  Please set SUPABASE_URL and SUPABASE_KEY environment variables!")
-        print("   export SUPABASE_URL='your-url'")
-        print("   export SUPABASE_KEY='your-key'")
         exit(1)
     
-    print("\n1. Loading markets...")
-    load_markets(limit=1000, active_only=False)
+    print(f"\n✓ Connected to Supabase: {SUPABASE_URL}")
     
-    print("\n2. Loading recent trades...")
-    load_trades(limit=5000)
+    print("\n" + "=" * 60)
+    print("STEP 1: Loading Events with Nested Markets")
+    print("=" * 60)
+    event_count, market_count = load_events_with_markets(limit=1000, active_only=False)
     
-    print("\n3. Taking market snapshots...")
-    take_snapshots_for_active_markets()
+    print("\n" + "=" * 60)
+    print("STEP 2: Loading Recent Trades")
+    print("=" * 60)
+    trade_count = load_trades(limit=5000)
     
-    print("\n4. Updating user metrics...")
+    print("\n" + "=" * 60)
+    print("STEP 3: Taking Market Snapshots")
+    print("=" * 60)
+    snapshot_count = take_snapshots_for_active_markets()
+    
+    print("\n" + "=" * 60)
+    print("STEP 4: Updating User Metrics")
+    print("=" * 60)
     update_all_user_metrics()
     
     print("\n" + "=" * 60)
-    print("Data loading complete!")
+    print("✅ DATA LOADING COMPLETE!")
+    print("=" * 60)
+    print(f"  Events:    {event_count}")
+    print(f"  Markets:   {market_count}")
+    print(f"  Trades:    {trade_count}")
+    print(f"  Snapshots: {snapshot_count}")
     print("=" * 60)
 

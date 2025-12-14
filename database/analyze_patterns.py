@@ -3,11 +3,23 @@ Analyze trading patterns from successful Polymarket traders
 """
 
 import os
+import sys
+from pathlib import Path
 import pandas as pd
 from supabase import create_client, Client
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple
 import json
+
+# Load environment variables from .env file in project root
+from dotenv import load_dotenv
+
+# Get the project root directory (parent of database/)
+project_root = Path(__file__).parent.parent
+dotenv_path = project_root / '.env'
+
+# Load .env file
+load_dotenv(dotenv_path)
 
 # ============================================
 # Configuration

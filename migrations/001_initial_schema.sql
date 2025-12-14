@@ -7,10 +7,89 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
+-- EVENTS TABLE
+-- ============================================
+CREATE TABLE IF NOT EXISTS events (
+  id VARCHAR(255) PRIMARY KEY,
+  ticker VARCHAR(255),
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  
+  -- Event type
+  event_type VARCHAR(10),
+  market_count INTEGER DEFAULT 0,
+  
+  -- Status and lifecycle
+  active BOOLEAN DEFAULT true,
+  closed BOOLEAN DEFAULT false,
+  archived BOOLEAN DEFAULT false,
+  new BOOLEAN DEFAULT false,
+  featured BOOLEAN DEFAULT false,
+  restricted BOOLEAN DEFAULT false,
+  
+  -- Dates
+  start_date TIMESTAMP,
+  creation_date TIMESTAMP,
+  end_date TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  
+  -- Volume and liquidity (aggregated across all markets)
+  liquidity DECIMAL(18, 2),
+  volume DECIMAL(18, 2),
+  volume_24hr DECIMAL(18, 2),
+  volume_1wk DECIMAL(18, 2),
+  volume_1mo DECIMAL(18, 2),
+  volume_1yr DECIMAL(18, 2),
+  open_interest DECIMAL(18, 2),
+  
+  -- CLOB metrics
+  liquidity_clob DECIMAL(18, 2),
+  
+  -- Media
+  image TEXT,
+  icon TEXT,
+  
+  -- Configuration
+  enable_order_book BOOLEAN DEFAULT true,
+  competitive DECIMAL(5, 4),
+  comment_count INTEGER DEFAULT 0,
+  cyom BOOLEAN DEFAULT false,
+  
+  -- Display options
+  show_all_outcomes BOOLEAN DEFAULT true,
+  show_market_images BOOLEAN DEFAULT true,
+  enable_neg_risk BOOLEAN DEFAULT false,
+  automatically_active BOOLEAN DEFAULT true,
+  neg_risk_augmented BOOLEAN DEFAULT false,
+  pending_deployment BOOLEAN DEFAULT false,
+  deploying BOOLEAN DEFAULT false,
+  
+  -- Tags/Categories
+  tags JSONB,
+  
+  -- Resolution
+  resolution_source TEXT
+);
+
+-- Events indexes
+CREATE INDEX IF NOT EXISTS idx_events_slug ON events(slug);
+CREATE INDEX IF NOT EXISTS idx_events_ticker ON events(ticker);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(active, closed);
+CREATE INDEX IF NOT EXISTS idx_events_end_date ON events(end_date);
+CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_volume ON events(volume DESC);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+
+COMMENT ON TABLE events IS 'Events table - each event can contain one (SMP) or multiple (GMP) markets';
+
+-- ============================================
 -- MARKETS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS markets (
   id VARCHAR(255) PRIMARY KEY,
+  event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   condition_id VARCHAR(66) NOT NULL UNIQUE,
   question TEXT NOT NULL,
   slug VARCHAR(255) UNIQUE NOT NULL,
@@ -79,8 +158,7 @@ CREATE TABLE IF NOT EXISTS markets (
   image TEXT,
   icon TEXT,
   
-  -- Categorization
-  events JSONB,
+  -- Categorization (for GMP markets)
   group_item_title VARCHAR(255),
   group_item_threshold DECIMAL(18, 8),
   series_color VARCHAR(50),
@@ -110,12 +188,13 @@ CREATE TABLE IF NOT EXISTS markets (
 );
 
 -- Markets indexes
-CREATE INDEX idx_markets_condition_id ON markets(condition_id);
-CREATE INDEX idx_markets_slug ON markets(slug);
-CREATE INDEX idx_markets_status ON markets(active, closed);
-CREATE INDEX idx_markets_end_date ON markets(end_date_iso);
-CREATE INDEX idx_markets_created_at ON markets(created_at DESC);
-CREATE INDEX idx_markets_volume ON markets(volume_num DESC);
+CREATE INDEX IF NOT EXISTS idx_markets_event_id ON markets(event_id);
+CREATE INDEX IF NOT EXISTS idx_markets_condition_id ON markets(condition_id);
+CREATE INDEX IF NOT EXISTS idx_markets_slug ON markets(slug);
+CREATE INDEX IF NOT EXISTS idx_markets_status ON markets(active, closed);
+CREATE INDEX IF NOT EXISTS idx_markets_end_date ON markets(end_date_iso);
+CREATE INDEX IF NOT EXISTS idx_markets_created_at ON markets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_markets_volume ON markets(volume_num DESC);
 
 COMMENT ON TABLE markets IS 'Core markets table storing all market metadata and real-time pricing';
 

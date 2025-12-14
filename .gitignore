@@ -38,6 +38,7 @@ env/
 .env
 .env.local
 .env.*.local
+# Keep .env.example for template (NOT ignored)
 *.key
 *.pem
 secrets.json

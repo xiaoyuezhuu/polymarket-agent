@@ -68,19 +68,27 @@ This will:
 
 ## 📊 Database Schema
 
-The database consists of 6 main tables:
+The database consists of 7 main tables:
 
 ### Core Tables
 
-1. **markets** - Market metadata, pricing, volumes
-2. **users** - Trader profiles with performance metrics
-3. **trades** - Individual trade records
-4. **user_positions** - Aggregated position tracking
+1. **events** - Event-level data (contains 1+ markets)
+2. **markets** - Individual market data (linked to events)
+3. **users** - Trader profiles with performance metrics
+4. **trades** - Individual trade records
+5. **user_positions** - Aggregated position tracking
 
 ### Analytics Tables
 
-5. **market_snapshots** - Time-series price data
-6. **trading_patterns** - Identified profitable patterns
+6. **market_snapshots** - Time-series price data
+7. **trading_patterns** - Identified profitable patterns
+
+### Event vs Market Structure
+
+- **Event**: A question/scenario (e.g., "Where will Barron Trump attend college?")
+  - **SMP (Single Market Product)**: 1 event → 1 market (binary yes/no)
+  - **GMP (Group Market Product)**: 1 event → multiple markets (mutually exclusive outcomes)
+- **Market**: A specific tradable outcome within an event (e.g., "Georgetown", "NYU", "Harvard")
 
 See [DATABASE_README.md](DATABASE_README.md) for detailed schema documentation.
 
