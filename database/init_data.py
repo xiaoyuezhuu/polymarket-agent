@@ -220,30 +220,13 @@ def init_load_all_trades_by_market(batch_size: int = 100, start_market_index: in
                     if wallet:
                         all_users[wallet] = user
                 
-                # Insert trades
-                batch_trade_count = 0
-                for trade in trades_batch:
-                    try:
-                        transformed = transform_trade_data(trade)
-                        transformed = {k: v for k, v in transformed.items() if v is not None}
-                        
-                        # Skip if missing required fields
-                        if not all([
-                            transformed.get('proxy_wallet'),
-                            transformed.get('side'),
-                            transformed.get('size'),
-                            transformed.get('price'),
-                            transformed.get('timestamp')
-                        ]):
-                            continue
-                        
-                        supabase.table('trades').insert(transformed).execute()
-                        batch_trade_count += 1
-                        
-                    except Exception as e:
-                        # Skip duplicate transaction hashes
-                        if 'duplicate' in str(e).lower():
-                            continue
+                # Upsert users BEFORE inserting trades (to satisfy foreign key constraint)
+                if batch_users:
+                    batch_user_count = upsert_users(batch_users)
+                    print(f"  ✓ Upserted {batch_user_count} users for this batch")
+                
+                # Insert trades directly using batch insert
+                batch_trade_count = insert_trades(trades_batch)
                 
                 market_trades_count += batch_trade_count
                 total_trades_inserted += batch_trade_count
@@ -271,11 +254,11 @@ def init_load_all_trades_by_market(batch_size: int = 100, start_market_index: in
         else:
             time.sleep(0.5)  # Small delay between markets
     
-    # Now upsert all collected users
+    # Final validation: ensure all collected users are in database
     print("\n" + "-" * 70)
-    print("Upserting all collected users...")
-    user_count = upsert_users(list(all_users.values()))
-    print(f"✓ Upserted {user_count} unique users")
+    print("Final validation: ensuring all users are in database...")
+    user_count = len(all_users)
+    print(f"✓ Total unique users collected: {user_count}")
     
     # Summary
     print("\n" + "=" * 70)

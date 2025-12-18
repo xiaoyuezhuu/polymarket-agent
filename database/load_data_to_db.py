@@ -15,6 +15,9 @@ import time
 # Load environment variables from .env file in project root
 from dotenv import load_dotenv
 
+# Import Supabase utility functions
+from database.supabase_utils import retrieve_all_rows
+
 # Get the project root directory (parent of database/)
 project_root = Path(__file__).parent.parent
 dotenv_path = project_root / '.env'
@@ -478,8 +481,7 @@ def load_events_with_markets(limit: int = 1000, active_only: bool = False):
     return event_count, market_count
 
 
-
-def load_trades(limit: int = 10000, market_slug: Optional[str] = None):
+def load_trades(limit: int = 10000, market_condition_id: Optional[str] = None):
     """Load trades from API to database"""
     print(f"Fetching trades (limit={limit})...")
     
@@ -491,7 +493,7 @@ def load_trades(limit: int = 10000, market_slug: Optional[str] = None):
     while offset < limit:
         batch_limit = min(batch_size, limit - offset)
         trades_batch = get_trades(
-            market=market_slug,
+            market=market_condition_id,
             limit=batch_limit, 
             offset=offset
         )
@@ -547,6 +549,175 @@ def take_snapshots_for_active_markets():
     print(f"Took {count} market snapshots")
     return count
 
+
+
+    """
+    Load trades for markets that don't have any trades yet in the database.
+    
+    This function:
+    1. Identifies condition_ids in markets table that have no corresponding trades
+    2. Fetches all trades for each missing market
+    3. Inserts trades and upserts associated users
+    
+    Args:
+        batch_size: Number of trades to fetch per API call (max 100)
+        rate_limit_delay: Delay in seconds between API calls
+    
+    Returns:
+        tuple: (markets_processed, users_added, trades_added)
+    """
+    print("=" * 70)
+    print("Loading trades for markets without trade data...")
+    print("=" * 70)
+    
+    # Step 1: Get all condition_ids from markets (using helper to bypass 1000 row limit)
+    print("\n→ Fetching all condition_ids from markets table...")
+    try:
+        markets_rows = retrieve_all_rows(
+            supabase,
+            'markets',
+            columns='condition_id'
+        )
+        all_condition_ids = set(
+            row['condition_id'] for row in markets_rows 
+            if row.get('condition_id')
+        )
+        print(f"✓ Found {len(all_condition_ids)} markets with condition_ids")
+    except Exception as e:
+        print(f"✗ Error fetching markets: {e}")
+        return 0, 0, 0
+    
+    # Step 2: Get condition_ids that already have trades (using helper)
+    print("\n→ Checking which markets already have trades...")
+    try:
+        trades_rows = retrieve_all_rows(
+            supabase,
+            'trades',
+            columns='condition_id'
+        )
+        existing_condition_ids = set(
+            row['condition_id'] for row in trades_rows 
+            if row.get('condition_id')
+        )
+        print(f"✓ Found {len(existing_condition_ids)} markets with existing trades")
+    except Exception as e:
+        print(f"✗ Error fetching existing trades: {e}")
+        return 0, 0, 0
+    
+    # Step 3: Find markets without trades
+    missing_condition_ids = list(all_condition_ids - existing_condition_ids)
+    print(f"\n📊 {len(missing_condition_ids)} markets need trade data loaded")
+    
+    if not missing_condition_ids:
+        print("✓ All markets already have trades!")
+        return 0, 0, 0
+    
+    # Step 4: Load trades for each missing market
+    total_trades_added = 0
+    markets_processed = 0
+    all_users = {}
+    
+    for idx, condition_id in enumerate(missing_condition_ids, 1):
+        print(f"\n📈 Market {idx}/{len(missing_condition_ids)}: {condition_id[:16]}...")
+        print("-" * 70)
+        
+        offset = 0
+        market_trades = 0
+        batch_num = 1
+        
+        # Paginate through all trades for this market
+        while True:
+            try:
+                # Fetch trades batch
+                trades_batch = get_trades(
+                    market=condition_id,
+                    limit=batch_size,
+                    offset=offset
+                )
+                
+                # No more trades for this market
+                if not trades_batch or len(trades_batch) == 0:
+                    break
+                
+                print(f"  → Batch {batch_num}: {len(trades_batch)} trades fetched")
+                
+                # Collect user data
+                for trade in trades_batch:
+                    user_data = transform_user_data(trade)
+                    wallet = user_data.get('proxy_wallet')
+                    if wallet:
+                        all_users[wallet] = user_data
+                
+                # Insert trades
+                batch_count = 0
+                for trade in trades_batch:
+                    try:
+                        transformed = transform_trade_data(trade)
+                        transformed = {k: v for k, v in transformed.items() if v is not None}
+                        
+                        # Skip if missing required fields
+                        if not all([
+                            transformed.get('proxy_wallet'),
+                            transformed.get('side'),
+                            transformed.get('size'),
+                            transformed.get('price'),
+                            transformed.get('timestamp')
+                        ]):
+                            continue
+                        
+                        supabase.table('trades').insert(transformed).execute()
+                        batch_count += 1
+                        
+                    except Exception as e:
+                        # Skip duplicates
+                        if 'duplicate' in str(e).lower():
+                            continue
+                
+                market_trades += batch_count
+                total_trades_added += batch_count
+                print(f"  ✓ Inserted {batch_count} trades (market total: {market_trades})")
+                
+                # Move to next batch
+                offset += batch_size
+                batch_num += 1
+                
+                # If fewer than batch_size, we're done
+                if len(trades_batch) < batch_size:
+                    break
+                
+                # Rate limiting
+                time.sleep(rate_limit_delay)
+                
+            except Exception as e:
+                print(f"  ⚠️  Error: {e}")
+                break
+        
+        markets_processed += 1
+        print(f"  ✓ Market complete: {market_trades} trades")
+        
+        # Periodic rate limiting
+        if idx % 10 == 0:
+            print(f"  ⏳ Rate limiting (3s)...")
+            time.sleep(3)
+    
+    # Step 5: Upsert all collected users
+    print("\n" + "-" * 70)
+    print("Upserting collected users...")
+    users_added = upsert_users(list(all_users.values()))
+    print(f"✓ Upserted {users_added} users")
+    
+    # Summary
+    print("\n" + "=" * 70)
+    print("TRADES LOADING COMPLETE")
+    print("=" * 70)
+    print(f"  Markets Processed:   {markets_processed:,}")
+    print(f"  Users Added:         {users_added:,}")
+    print(f"  Trades Added:        {total_trades_added:,}")
+    if markets_processed > 0:
+        print(f"  Avg Trades/Market:   {total_trades_added/markets_processed:.2f}")
+    print("=" * 70)
+    
+    return markets_processed, users_added, total_trades_add
 
 def update_all_user_metrics():
     """Update calculated metrics for all users"""

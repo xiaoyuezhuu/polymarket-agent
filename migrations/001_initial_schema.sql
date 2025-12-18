@@ -90,7 +90,7 @@ COMMENT ON TABLE events IS 'Events table - each event can contain one (SMP) or m
 CREATE TABLE IF NOT EXISTS markets (
   id VARCHAR(255) PRIMARY KEY,
   event_id VARCHAR(255) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  condition_id VARCHAR(66) NOT NULL UNIQUE,
+  condition_id VARCHAR(255) NOT NULL UNIQUE,
   question TEXT NOT NULL,
   slug VARCHAR(255) UNIQUE NOT NULL,
   description TEXT,
@@ -266,14 +266,14 @@ COMMENT ON TABLE users IS 'User profiles with calculated trading performance met
 -- ============================================
 CREATE TABLE IF NOT EXISTS trades (
   id BIGSERIAL PRIMARY KEY,
-  transaction_hash VARCHAR(66) UNIQUE,
+  transaction_hash VARCHAR(255),
   proxy_wallet VARCHAR(42) NOT NULL REFERENCES users(proxy_wallet) ON DELETE CASCADE,
-  condition_id VARCHAR(66) NOT NULL,
+  condition_id VARCHAR(255) NOT NULL,
   slug VARCHAR(255) REFERENCES markets(slug) ON DELETE SET NULL,
   
   -- Trade details
   side VARCHAR(4) NOT NULL CHECK (side IN ('BUY', 'SELL')),
-  asset VARCHAR(66),
+  asset VARCHAR(255),
   outcome VARCHAR(255),
   outcome_index INTEGER,
   size DECIMAL(18, 8) NOT NULL,
@@ -307,13 +307,13 @@ COMMENT ON TABLE trades IS 'Individual trade records linked to users and markets
 CREATE TABLE IF NOT EXISTS user_positions (
   id BIGSERIAL PRIMARY KEY,
   proxy_wallet VARCHAR(42) NOT NULL REFERENCES users(proxy_wallet) ON DELETE CASCADE,
-  condition_id VARCHAR(66) NOT NULL,
+  condition_id VARCHAR(255) NOT NULL,
   slug VARCHAR(255) REFERENCES markets(slug) ON DELETE SET NULL,
   
   -- Position details
   outcome VARCHAR(255) NOT NULL,
   outcome_index INTEGER NOT NULL,
-  asset VARCHAR(66),
+  asset VARCHAR(255),
   
   -- Position metrics
   current_size DECIMAL(18, 8) NOT NULL,
@@ -348,7 +348,7 @@ COMMENT ON TABLE user_positions IS 'Current and historical user positions aggreg
 -- ============================================
 CREATE TABLE IF NOT EXISTS market_snapshots (
   id BIGSERIAL PRIMARY KEY,
-  condition_id VARCHAR(66) NOT NULL REFERENCES markets(condition_id) ON DELETE CASCADE,
+  condition_id VARCHAR(255) NOT NULL REFERENCES markets(condition_id) ON DELETE CASCADE,
   slug VARCHAR(255) REFERENCES markets(slug) ON DELETE SET NULL,
   
   -- Snapshot time
@@ -530,61 +530,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================
--- VIEWS
--- ============================================
-
--- Successful traders view
-CREATE OR REPLACE VIEW v_successful_traders AS
-SELECT 
-  proxy_wallet,
-  name,
-  pseudonym,
-  win_rate,
-  roi_percentage,
-  total_pnl,
-  total_trades,
-  total_volume,
-  last_trade_at
-FROM users
-WHERE is_successful_trader = true
-ORDER BY roi_percentage DESC;
-
--- Active markets view
-CREATE OR REPLACE VIEW v_active_markets AS
-SELECT 
-  slug,
-  question,
-  volume_24hr,
-  liquidity_num,
-  spread,
-  one_day_price_change,
-  end_date_iso,
-  last_trade_price
-FROM markets
-WHERE active = true 
-  AND closed = false
-ORDER BY volume_24hr DESC NULLS LAST;
-
--- Recent trades with user info
-CREATE OR REPLACE VIEW v_recent_trades AS
-SELECT 
-  t.id,
-  t.datetime,
-  t.side,
-  t.outcome,
-  t.price,
-  t.size,
-  t.trade_value_usd,
-  t.slug,
-  t.title,
-  u.pseudonym as trader_name,
-  u.win_rate as trader_win_rate,
-  u.is_successful_trader
-FROM trades t
-JOIN users u ON t.proxy_wallet = u.proxy_wallet
-ORDER BY t.datetime DESC;
-
--- ============================================
 -- GRANTS (Optional - adjust based on your needs)
 -- ============================================
 -- GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
@@ -595,6 +540,17 @@ ORDER BY t.datetime DESC;
 -- INITIAL DATA / SEED (Optional)
 -- ============================================
 -- You can add any initial data here
+
+-- ============================================
+-- COLUMN COMMENTS
+-- ============================================
+COMMENT ON COLUMN trades.asset IS 'Asset/token ID - VARCHAR(255) to accommodate varying lengths';
+COMMENT ON COLUMN trades.transaction_hash IS 'Transaction hash - VARCHAR(255) for compatibility with different chains';
+COMMENT ON COLUMN trades.condition_id IS 'Market condition ID - VARCHAR(255) for flexibility';
+COMMENT ON COLUMN markets.condition_id IS 'Market condition ID - VARCHAR(255) for flexibility';
+COMMENT ON COLUMN user_positions.condition_id IS 'Market condition ID - VARCHAR(255) for flexibility';
+COMMENT ON COLUMN user_positions.asset IS 'Asset/token ID - VARCHAR(255) to accommodate varying lengths';
+COMMENT ON COLUMN market_snapshots.condition_id IS 'Market condition ID - VARCHAR(255) for flexibility';
 
 COMMIT;
 
